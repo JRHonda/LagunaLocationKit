@@ -7,24 +7,36 @@
 
 import CoreLocation
 
-public enum AuthorizationMode {
-    case whenInUse
-    case always
+public enum LocationManagerError: Error {
+    case unknown
+    case locationServicesNotEnabled
 }
+
+// MARK: - Location Manager Delegate
+
+public protocol LocationManagerDelegate: AnyObject {
+    
+    /// Receives error from `CLLocationmanagerDelegate` method `didFailWithError`
+    func locationManager(didFailWithError error: Error)
+    
+    /// Receives new locations as they come in through the `CLLocationManagerDelegate` method `didUpdateLocations`
+    func locationManager(didReceiveLocations locations: [CLLocation])
+}
+
+
+// MARK: - Location Manager
 
 public final class LocationManager: NSObject, ObservableObject {
     
     // MARK: - Private Properties
     
     /// add description
-    private let locationManager: CLLocationManager = {
-        let lm = CLLocationManager()
-        // lm.pausesLocationUpdatesAutomatically = true // not yet supporting - need to test to see if this makes sense in the context of a PFT running session.
-        lm.allowsBackgroundLocationUpdates = true // must be a capability set in project settings
-        lm.activityType = .fitness
-        lm.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        return lm
-    }()
+    private let locationManager: CLLocationManager
+    
+    private let configuration: LocationManagerConfiguration
+    
+    
+    // MARK: - Public Delegate Property
     
     /// add description
     public weak var delegate: LocationManagerDelegate?
@@ -39,9 +51,24 @@ public final class LocationManager: NSObject, ObservableObject {
     @Published public var accuracyAuthorization: CLAccuracyAuthorization
     
     
-    // MARK: - Public Override Init
+    // MARK: - Public Init
     
-    public override init() {
+    public init(_ configuration: LocationManagerConfiguration) {
+        self.configuration = configuration
+        
+        let locationManager: CLLocationManager = {
+            let lm = CLLocationManager()
+            lm.desiredAccuracy = configuration.desiredAccuracy
+#if os(iOS) || os(macOS)
+            lm.pausesLocationUpdatesAutomatically = configuration.canPauseLocationUpdatesAutomatically
+#endif
+            lm.allowsBackgroundLocationUpdates = configuration.allowsBackgroundLocationUpdates
+            lm.activityType = configuration.activityType
+            lm.distanceFilter = configuration.distanceFilter
+            return lm
+        }()
+        
+        self.locationManager = locationManager
         self.authorizationStatus = locationManager.authorizationStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
         
@@ -53,16 +80,30 @@ public final class LocationManager: NSObject, ObservableObject {
     
     // MARK: - Public Methods
     
-    
-    /// add description
-    /// - Parameter authorizationMode: add description
-    public func requestAuthorization(_ authorizationMode: AuthorizationMode) {
-        switch authorizationMode {
+    /// Depending on the `authorizationMode` configured in the `LocationManagerConfiguration`, this method will
+    /// call the appropriate permissions request method.
+    ///
+    /// Reminder to developer. Your app's `Info.plist` must include the correct privacy key-value pair corresponding to the
+    /// type of permissions your app requires.
+    public func requestAuthorization() throws {
+        guard CLLocationManager.locationServicesEnabled() else {
+            throw LocationManagerError.locationServicesNotEnabled
+        }
+        
+        switch configuration.authorizationMode {
             case .whenInUse:
                 locationManager.requestWhenInUseAuthorization()
             case .always:
                 locationManager.requestAlwaysAuthorization()
         }
+    }
+    
+    public func startUpdatingLocation() {
+        locationManager.startUpdatingLocation()
+    }
+    
+    public func stopUpdatingLocation() {
+        locationManager.stopUpdatingLocation()
     }
 }
 
@@ -73,13 +114,6 @@ extension LocationManager: CLLocationManagerDelegate {
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         accuracyAuthorization = manager.accuracyAuthorization
-        
-        switch manager.authorizationStatus {
-            case .authorizedWhenInUse, .authorized, .authorizedAlways:
-                locationManager.startUpdatingLocation()
-            default:
-                return
-        }
     }
     
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
@@ -88,37 +122,5 @@ extension LocationManager: CLLocationManagerDelegate {
     
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         delegate?.locationManager(didFailWithError: error)
-    }
-}
-
-// MARK: - Location Manager
-
-public protocol LocationManagerDelegate: AnyObject {
-    
-    /// Receives error from `CLLocationmanagerDelegate` method `didFailWithError`
-    func locationManager(didFailWithError error: Error)
-    
-    /// Receives new locations as they come in through the `CLLocationManagerDelegate` method `didUpdateLocations`
-    func locationManager(didReceiveLocations locations: [CLLocation])
-}
-
-// MARK: - Optional CLLocationManager Configuration (not yet implemented)
-
-public struct LocationManagerConfiguration {
-    
-    // MARK: - Public Properties
-    
-    /// Designed to be passed to the `pausesLocationUpdatesAutomatically` property on a `CLLocationManager` instance
-    public let canPauseLocationUpdatesAutomatically: Bool
-    
-    /// Designed to be passed to the `allowsBackgroundLocationUpdates` property on a `CLLocationManager` instance
-    public let allowsBackgroundLocationUpdates: Bool
-    
-    
-    // MARK: - Public Init
-    
-    public init(canPauseLocationUpdatesAutomatically: Bool, allowsBackgroundLocationUpdates: Bool) {
-        self.canPauseLocationUpdatesAutomatically = canPauseLocationUpdatesAutomatically
-        self.allowsBackgroundLocationUpdates = allowsBackgroundLocationUpdates
     }
 }
