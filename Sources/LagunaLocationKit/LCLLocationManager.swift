@@ -1,55 +1,44 @@
 //
-//  LocationManager.swift
+//  LCLLocationManager.swift
 //  
 //
 //  Created by Justin Honda on 1/23/22.
 //
 
 import CoreLocation
+#if !os(macOS)
+import HealthKit
+#endif
+
 
 public enum LocationManagerError: Error {
     case unknown
     case locationServicesNotEnabled
 }
 
-// MARK: - Location Manager Delegate
-
-public protocol LocationManagerDelegate: AnyObject {
-    
-    /// Receives error from `CLLocationmanagerDelegate` method `didFailWithError`
-    func locationManager(didFailWithError error: Error)
-    
-    /// Receives new locations as they come in through the `CLLocationManagerDelegate` method `didUpdateLocations`
-    func locationManager(didReceiveLocations locations: [CLLocation])
-}
-
-
-// MARK: - Location Manager
-
-public final class LocationManager: NSObject, ObservableObject {
+public final class LCLLocationManager: NSObject, ObservableObject {
     
     // MARK: - Private Properties
     
     /// add description
     private let locationManager: CLLocationManager
-    
     private let configuration: LocationManagerConfiguration
-    
-    
-    // MARK: - Public Delegate Property
-    
-    /// add description
-    public weak var delegate: LocationManagerDelegate?
-    
-    
+
     // MARK: - Public Properties
     
-    /// add description
     @Published public var authorizationStatus: CLAuthorizationStatus
-    
-    /// add description
     @Published public var accuracyAuthorization: CLAccuracyAuthorization
     
+    /// raw value in meters per second
+    @Published private(set) public var speed: CLLocationSpeed = 0
+    /// raw value in meters
+    @Published private(set) public var distance: Double = 0
+    /// used to calculate distance from a newer location
+    @Published private(set) public var previousLocation: CLLocation?
+    
+#if !os(macOS)
+    public weak var routeBuilder: HKWorkoutRouteBuilder?
+#endif
     
     // MARK: - Public Init
     
@@ -76,7 +65,6 @@ public final class LocationManager: NSObject, ObservableObject {
         
         self.locationManager.delegate = self
     }
-    
     
     // MARK: - Public Methods
     
@@ -107,20 +95,41 @@ public final class LocationManager: NSObject, ObservableObject {
     }
 }
 
-
 // MARK: - CLLocationManagerDelegate
 
-extension LocationManager: CLLocationManagerDelegate {
+extension LCLLocationManager: CLLocationManagerDelegate {
     public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
         accuracyAuthorization = manager.accuracyAuthorization
     }
     
     public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        delegate?.locationManager(didReceiveLocations: locations)
+        #if !os(macOS)
+        routeBuilder?.insertRouteData(locations) { (success, error) in
+            if let error = error {
+                // NOTE: - There is an error with watchOS simulators above Series 5.
+                debugPrint("Error inserting route data for workout route builder:", error)
+            }
+            // NOTE: - When using simulator, use Series 5 for successful route building.
+            debugPrint("Adding locations to workout route builder:", locations)
+        }
+        #endif
+        guard let location = locations.first,
+              location.timestamp.timeIntervalSinceNow < 3.1,
+              location.horizontalAccuracy < 20,
+              location.speed > 0.35
+        else { return }
+
+        speed = location.speed
+        
+        if let previousLocation = previousLocation {
+            distance += location.distance(from: previousLocation)
+        }
+        
+        previousLocation = location
     }
     
     public func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        delegate?.locationManager(didFailWithError: error)
+        debugPrint("******* Location Manager failed with error ******* \n \(error.localizedDescription)")
     }
 }

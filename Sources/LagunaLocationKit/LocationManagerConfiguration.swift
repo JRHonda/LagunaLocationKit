@@ -29,15 +29,16 @@ public struct LocationManagerConfiguration {
     /// add description
     public let distanceFilter: CLLocationDistance
     
-    
     // MARK: - Public Init
     
-    public init(canPauseLocationUpdatesAutomatically: Bool,
-                allowsBackgroundLocationUpdates: Bool,
-                activityType: CLActivityType,
-                desiredAccuracy: CLLocationAccuracy,
-                authorizationMode: AuthorizationMode,
-                distanceFilter: CLLocationDistance) {
+    public init(
+        canPauseLocationUpdatesAutomatically: Bool,
+        allowsBackgroundLocationUpdates: Bool,
+        activityType: CLActivityType,
+        desiredAccuracy: CLLocationAccuracy,
+        authorizationMode: AuthorizationMode,
+        distanceFilter: CLLocationDistance
+    ) {
         self.canPauseLocationUpdatesAutomatically = canPauseLocationUpdatesAutomatically
         self.allowsBackgroundLocationUpdates = allowsBackgroundLocationUpdates
         self.activityType = activityType
